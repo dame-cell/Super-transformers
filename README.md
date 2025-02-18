@@ -23,8 +23,8 @@ $$
 $$
 
 where:
-- $ s $ is the scaling factor,
-- $ n $ is the input size.
+-  s is the scaling factor,
+-  n  is the input size.
 
 #### SSMax in Attention Mechanisms:
 $$
@@ -32,8 +32,8 @@ a_n = \text{SSMax} \left( \frac{q_n K^T}{\sqrt{d}} \right) = \text{Softmax} \lef
 $$
 
 where:
-- $ q_n $ and $ K $ are the query and key matrices in attention,
-- $ d $ is the hidden dimension.
+- q_n  and  K  are the query and key matrices in attention,
+- d  is the hidden dimension.
 
 
 
