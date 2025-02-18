@@ -2,150 +2,275 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional
 
-import torch
-import torch.nn as nn
-
-class ScalableSoftmax(nn.Module):
-    def __init__(self, scale_factor=0.2):
-        super(ScalableSoftmax, self).__init__()
-        self.scale_factor = scale_factor  
-
-    def forward(self, x):
-        """
-        Applies Scalable Softmax (SSMax) to the input tensor.
-        The formula is Softmax(x * s), where s is the scaling factor.
-
-        Parameters:
-            x (torch.Tensor): The input tensor to apply Scalable Softmax on.
-
-        Returns:
-            torch.Tensor: The output after applying Scalable Softmax.
-        """
-        scaled_x = self.scale_factor * x
-        
-        exp_x = torch.exp(scaled_x)
-        softmax_output = exp_x / torch.sum(exp_x, dim=-1, keepdim=True)
-        
-        return softmax_output
+# This code has been heavily inspired from huggingface ,they way they code and their structure 
 
 
-def scaled_dot_product(q, k, v, mask=None, ssmax=False):
+def create_causal_mask(seq_len: int, device: torch.device) -> torch.Tensor:
+    """Create causal mask for autoregressive generation."""
+    mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
+    return mask.to(device)
+
+def scaled_dot_product(q: torch.Tensor, 
+                      k: torch.Tensor, 
+                      v: torch.Tensor, 
+                      mask: Optional[torch.Tensor] = None, 
+                      scale_param: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Enhanced scaled dot product attention with optional SSMax scaling.
+    Args:
+        q, k, v: Query, Key, Value tensors
+        mask: Attention mask
+        scale_param: Optional learnable scaling parameter for SSMax
+    """
     d_k = q.size(-1)
+    
+    if scale_param is not None:
+        # Get context size and apply SSMax scaling
+        n = k.size(-2)
+        scale = scale_param.unsqueeze(-1) * torch.log(torch.tensor(n, dtype=q.dtype, device=q.device))
+        scale = scale.clamp(min=1e-5)  # Prevent numerical instability
+        q = scale.unsqueeze(-1) * q
+    
     scores = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(d_k)
+    
     if mask is not None:
-        scores = scores.masked_fill(mask == 0, float('-inf'))
+        scores = scores.masked_fill(mask, float('-inf'))
     
-    if ssmax:
-        attention = ScalableSoftmax()(scores)
-    else:
-        attention = F.softmax(scores, dim=-1)
-    
+    attention = F.softmax(scores, dim=-1)
     values = torch.matmul(attention, v)
     return values, attention
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, dim, num_heads, ssmax=False):
+    def __init__(self, dim: int, num_heads: int, ssmax: bool = False, dropout: float = 0.1):
         super().__init__()
+        assert dim % num_heads == 0, "dim must be divisible by num_heads"
+        
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.qkv_layer = nn.Linear(dim, 3 * dim)
         self.out_proj = nn.Linear(dim, dim)
-        self.ssmax = ssmax
+        self.dropout = nn.Dropout(dropout)
+        
+        # Initialize learnable scaling parameter for SSMax
+        self.scale_param = nn.Parameter(torch.ones(num_heads)) if ssmax else None
+        
+        # Initialize attention entropy tracking
+        self.register_buffer('attention_entropy', torch.zeros(1))
+        
+    def compute_attention_entropy(self, attention: torch.Tensor) -> torch.Tensor:
+        """Compute entropy of attention distributions.So I can check the attention distributions."""
+        entropy = -(attention * torch.log(attention + 1e-9)).sum(dim=-1).mean()
+        return entropy
     
-    def forward(self, x, mask=None):
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size, seq_len, dim = x.shape
-        qkv = self.qkv_layer(x).reshape(batch_size, seq_len, self.num_heads, 3 * self.head_dim)
+        
+        qkv = self.qkv_layer(x)
+        qkv = qkv.reshape(batch_size, seq_len, self.num_heads, 3 * self.head_dim)
         qkv = qkv.permute(0, 2, 1, 3)
         q, k, v = qkv.chunk(3, dim=-1)
-        values, attention = scaled_dot_product(q, k, v, mask, self.ssmax)
+        
+        values, attention = scaled_dot_product(q, k, v, mask, self.scale_param)
+        
+        # Track attention entropy
+        self.attention_entropy = self.compute_attention_entropy(attention)
+        
         values = values.permute(0, 2, 1, 3).reshape(batch_size, seq_len, dim)
-        return self.out_proj(values)
+        return self.dropout(self.out_proj(values))
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=512):
+    def __init__(self, dim: int, max_len: int = 512, dropout: float = 0.1):
         super().__init__()
-        self.d_model = d_model
-        pe = torch.zeros(max_len, d_model)
+        self.dropout = nn.Dropout(dropout)
+        
+        pe = torch.zeros(max_len, dim)
         position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
+        div_term = torch.exp(torch.arange(0, dim, 2) * -(math.log(10000.0) / dim))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        self.pe = pe.unsqueeze(0)
-    
-    def forward(self, x):
-        return x + self.pe[:, :x.size(1)].to(x.device)
+        self.register_buffer('pe', pe.unsqueeze(0))
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.dropout(x + self.pe[:, :x.size(1)])
 
 class MLP(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout=0.1):
+    def __init__(self, dim: int, hidden_dim: int, dropout: float = 0.1):
         super().__init__()
         self.fc1 = nn.Linear(dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, dim)
         self.dropout = nn.Dropout(dropout)
-        self.act = nn.ReLU()
-    
-    def forward(self, x):
+        self.act = nn.GELU()  # Changed to GELU for better performance
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.fc2(self.dropout(self.act(self.fc1(x))))
 
 class TransformerDecoderLayer(nn.Module):
-    def __init__(self, dim, num_heads, ffn_dim, dropout=0.1, ssmax=False):
+    def __init__(self, dim: int, num_heads: int, ffn_dim: int, dropout: float = 0.1, ssmax: bool = False):
         super().__init__()
-        self.self_attn = MultiHeadAttention(dim, num_heads, ssmax)
+        self.self_attn = MultiHeadAttention(dim, num_heads, ssmax, dropout)
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.mlp = MLP(dim, ffn_dim, dropout)
         self.dropout = nn.Dropout(dropout)
-    
-    def forward(self, x, mask=None):
-        attn_out = self.self_attn(x, mask)
-        x = self.norm1(x + self.dropout(attn_out))
-        x = self.norm2(x + self.dropout(self.mlp(x)))
+        
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # Pre-norm architecture for better training stability
+        normalized = self.norm1(x)
+        attn_out = self.self_attn(normalized, mask)
+        x = x + self.dropout(attn_out)
+        
+        normalized = self.norm2(x)
+        mlp_out = self.mlp(normalized)
+        x = x + self.dropout(mlp_out)
         return x
 
 class GPT2Decoder(nn.Module):
-    def __init__(self, vocab_size, dim, num_heads, num_layers, ffn_dim, max_len=1024, dropout=0.1, ssmax=False, use_pos_enc=True):
+    def __init__(self, 
+                 vocab_size: int,
+                 dim: int,
+                 num_heads: int,
+                 num_layers: int,
+                 ffn_dim: int,
+                 max_len: int = 1024,
+                 dropout: float = 0.1,
+                 ssmax: bool = False,
+                 use_pos_enc: bool = True):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim)
         self.use_pos_enc = use_pos_enc
         if use_pos_enc:
-            self.pos_encoding = PositionalEncoding(dim, max_len)
+            self.pos_encoding = PositionalEncoding(dim, max_len, dropout)
+            
         self.layers = nn.ModuleList([
-            TransformerDecoderLayer(dim, num_heads, ffn_dim, dropout, ssmax) for _ in range(num_layers)
+            TransformerDecoderLayer(dim, num_heads, ffn_dim, dropout, ssmax)
+            for _ in range(num_layers)
         ])
+        
         self.norm = nn.LayerNorm(dim)
         self.lm_head = nn.Linear(dim, vocab_size)
+        
+        # Initialize weights
+        self.apply(self._init_weights)
     
-    def forward(self, x, mask=None):
+    # initialize weights 
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        elif isinstance(module, nn.LayerNorm):
+            torch.nn.init.ones_(module.weight)
+            torch.nn.init.zeros_(module.bias)
+            
+    def get_attention_entropy(self) -> torch.Tensor:
+        """Return average attention entropy across all layers."""
+        return torch.mean(torch.stack([layer.self_attn.attention_entropy for layer in self.layers]))
+    
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # Create causal mask if none provided
+        if mask is None:
+            mask = create_causal_mask(x.size(1), x.device)
+            
         x = self.embedding(x)
         if self.use_pos_enc:
             x = self.pos_encoding(x)
+            
         for layer in self.layers:
             x = layer(x, mask)
+            
         x = self.norm(x)
         return self.lm_head(x)
+    
+    def generate(self, 
+                input_ids: torch.Tensor, 
+                max_length: int, 
+                temperature: float = 1.0,
+                top_k: Optional[int] = None,
+                top_p: Optional[float] = None) -> torch.Tensor:
+        """
+        Autoregressive text generation with optional sampling strategies.
+        """
+        for _ in range(max_length - input_ids.size(1)):
+            # Forward pass
+            logits = self(input_ids)[:, -1, :]
+            
+            # Apply temperature
+            logits = logits / temperature
+            
+            # Apply top-k filtering
+            if top_k is not None:
+                indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+                logits[indices_to_remove] = float('-inf')
+            
+            # Apply top-p (nucleus) filtering
+            if top_p is not None:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                sorted_indices_to_remove = cumulative_probs > top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                sorted_indices_to_remove[..., 0] = 0
+                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                logits[indices_to_remove] = float('-inf')
+            
+            # Sample from the filtered distribution
+            probs = F.softmax(logits, dim=-1)
+            next_token = torch.multinomial(probs, num_samples=1)
+            
+            input_ids = torch.cat([input_ids, next_token], dim=1)
+            
+        return input_ids
+
+def test_model():
+    """Test the model with example inputs."""
+    # Model parameters
+    vocab_size = 50257
+    dim = 768
+    num_heads = 12
+    num_layers = 12
+    ffn_dim = 3072
+    max_len = 1024
+    dropout = 0.1
+    ssmax = True
+    use_pos_enc = False
+    
+    # Initialize model
+    model = GPT2Decoder(
+        vocab_size=vocab_size,
+        dim=dim,
+        num_heads=num_heads,
+        num_layers=num_layers,
+        ffn_dim=ffn_dim,
+        max_len=max_len,
+        dropout=dropout,
+        ssmax=ssmax,
+        use_pos_enc=use_pos_enc
+    )
+    
+    # Create example input
+    batch_size = 2
+    seq_len = 32
+    input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    
+    # Test forward pass
+    output = model(input_ids)
+    print(f"Output shape: {output.shape}")
+    
+    # Test generation
+    generated = model.generate(
+        input_ids=input_ids[:, :1],  # Start with first token
+        max_length=16,
+        temperature=0.7,
+        top_k=50,
+        top_p=0.9
+    )
+    print(f"Generated sequence shape: {generated.shape}")
+    
+    # Print attention entropy
+    print(f"Average attention entropy: {model.get_attention_entropy().item():.4f}")
 
 if __name__ == "__main__":
- 
-    # Set parameters for GPT-2
-    vocab_size = 50257  # Common GPT-2 vocab size
-    dim = 768  # Dimension of model embeddings (GPT-2 uses 768 by default for base models)
-    num_heads = 12  # Number of attention heads
-    num_layers = 12  # Number of transformer layers
-    ffn_dim = 3072  # Feed-forward network dimension, typically 4 times dim
-    max_len = 1024  # Max input sequence length
-    dropout = 0.1  # Dropout rate
-    ssmax = True  # Use Scalable Softmax
-    use_pos_enc = False  # Use positional encoding
-
-    # Instantiate the GPT-2 decoder model
-    model = GPT2Decoder(vocab_size, dim, num_heads, num_layers, ffn_dim, max_len, dropout, ssmax, use_pos_enc)
-
-    # Create dummy input sequence of tokenized text (e.g., [50256] is often the EOS token in GPT-2 vocab)
-    input_seq = torch.randint(0, vocab_size, (1, 10))  # Batch size of 1, sequence length of 10 tokens
-
-    # Perform a forward pass through the model
-    output = model(input_seq)
-
-    # Print the output (logits for each token in the sequence)
-    print(output.shape)  # Output shape: (batch_size, sequence_length, vocab_size)
-    print(output)
+    test_model()
