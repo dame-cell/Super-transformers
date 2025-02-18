@@ -17,9 +17,11 @@ $$
 $$
 
 #### Scalable Softmax (SSMax):
+
 $$
 \text{SSMax}(z_i) = \frac{e^{(s \log n)z_i}}{\sum_{j=1}^{n} e^{(s \log n)z_j}}
 $$
+
 where:
 - $ s $ is the scaling factor,
 - $ n $ is the input size.
