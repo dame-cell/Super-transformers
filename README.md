@@ -7,3 +7,13 @@ We code a vanilla decoder only transformers  but instead we use these three new 
 
 
 ### Citations
+
+```python
+@inproceedings{Nakanishi2025ScalableSoftmax,
+    title   = {Scalable-Softmax Is Superior for Attention},
+    author  = {Ken M. Nakanishi},
+    year    = {2025},
+    url     = {https://arxiv.org/pdf/2501.19399}
+}
+
+```
