@@ -92,9 +92,7 @@ def train(args):
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
             progress_bar.update(1)
             
-            if step % 100 == 0 and step > 0:
-                if args.wandb:
-                    wandb.log({"step": step + 1  , "train_loss": running_loss})
+   
           
 
             if step % 1000 == 0 and step > 0:
@@ -124,10 +122,17 @@ def train(args):
                     print(f"Error during generation: {str(e)}")
                 
                 model.train()
-        
+
+        if step % 100 == 0 and step > 0:
+            step_loss = running_loss / (step + 1)  # Correct loss calculation
+            print(f"Step {step+1} - Train Loss: {step_loss:.4f}")
+    
+            if args.wandb:
+                wandb.log({"step": step + 1, "train_loss": step_loss})  # Log step loss correctly
+
+
         epoch_loss = running_loss / len(train_loader)
         print(f"Epoch {epoch+1}/{args.epoch} - Train Loss: {epoch_loss:.4f}")
-        
 
         # Validation loop
         if step % 1000 == 0 and step > 0:
