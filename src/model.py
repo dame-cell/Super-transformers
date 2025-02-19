@@ -1,9 +1,8 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import Optional
-
+import torch.nn.functional as F
 # This code has been heavily inspired from huggingface ,they way they code and their structure 
 
 
@@ -185,45 +184,58 @@ class GPT2Decoder(nn.Module):
         x = self.norm(x)
         return self.lm_head(x)
     
+
     def generate(self, 
-                input_ids: torch.Tensor, 
-                max_length: int, 
-                temperature: float = 1.0,
-                top_k: Optional[int] = None,
-                top_p: Optional[float] = None) -> torch.Tensor:
+            input_ids: torch.Tensor, 
+            max_length: int,
+            temperature: float = 1.0) -> torch.Tensor:
         """
-        Autoregressive text generation with optional sampling strategies.
+        Simple autoregressive text generation for enwik8 dataset.
+        Args:
+            input_ids: Input tensor of shape [batch_size, seq_length]
+            max_length: Maximum length of sequence to generate
+            temperature: Sampling temperature (higher = more random)
         """
-        for _ in range(max_length - input_ids.size(1)):
-            # Forward pass
-            logits = self(input_ids)[:, -1, :]
+        # Generate until we reach max_length
+        while input_ids.size(1) < max_length:
+            # Get logits for next token
+            logits = self(input_ids)[:, -1, :] / temperature
             
-            # Apply temperature
-            logits = logits / temperature
-            
-            # Apply top-k filtering
-            if top_k is not None:
-                indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
-                logits[indices_to_remove] = float('-inf')
-            
-            # Apply top-p (nucleus) filtering
-            if top_p is not None:
-                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-                sorted_indices_to_remove = cumulative_probs > top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
-                indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                logits[indices_to_remove] = float('-inf')
-            
-            # Sample from the filtered distribution
+            # Convert to probabilities
             probs = F.softmax(logits, dim=-1)
+            
+            # Sample next token
             next_token = torch.multinomial(probs, num_samples=1)
             
+            # Append to sequence
             input_ids = torch.cat([input_ids, next_token], dim=1)
-            
+        
         return input_ids
+        
+def build_model(size: str, ssmax: bool = True, use_pos_enc: bool = False):
+    config = {
+        "small": {"vocab_size": 20000, "dim": 256, "num_heads": 4, "num_layers": 4, "ffn_dim": 1024, "max_len": 1024, "dropout": 0.2},
+        "default": {"vocab_size": 30000, "dim": 512, "num_heads": 8, "num_layers": 6, "ffn_dim": 2048, "max_len": 2048, "dropout": 0.2},
+        "large": {"vocab_size": 50000, "dim": 1024, "num_heads": 16, "num_layers": 12, "ffn_dim": 4096, "max_len": 4096, "dropout": 0.2},
+    }
 
+    if size not in config:
+        raise ValueError("Please choose between 'small', 'default', and 'large' for size.")
+    
+    print(f"We are using model size :{size}")
+    return GPT2Decoder(
+        vocab_size=config[size]['vocab_size'],
+        dim=config[size]['dim'],
+        num_heads=config[size]['num_heads'],
+        num_layers=config[size]['num_layers'],  
+        ffn_dim=config[size]['ffn_dim'],
+        max_len=config[size]['max_len'],
+        dropout=config[size]['dropout'],
+        ssmax=ssmax,
+        use_pos_enc=use_pos_enc  
+    )
+
+    
 def test_model():
     """Test the model with example inputs."""
     # Model parameters
