@@ -1,0 +1,6 @@
+torch 
+argparse 
+triformer 
+transformers 
+datasets 
+accelerate 
