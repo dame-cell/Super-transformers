@@ -16,7 +16,7 @@ torch.manual_seed(42)
 def parse_args():
     parser = argparse.ArgumentParser(description="Processing data for the model")
     parser.add_argument('--max_len', type=int, default=1024, help="context length for the model")
-    parser.add_argument('--epoch', type=int, default=10, help="Number of epochs for training")
+    parser.add_argument('--epoch', type=int, default=1, help="Number of epochs for training")
     parser.add_argument('--lr', type=float, default=0.001, help="Learning rate for training")
     parser.add_argument('--wandb', type=bool, default=False, help="Use Weights and Biases for logging")
     parser.add_argument('--ssmax', type=bool, default=True, help="whether to use or not use scalable softmax")
@@ -92,6 +92,11 @@ def train(args):
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
             progress_bar.update(1)
             
+            if step % 100 == 0 and step > 0:
+                if args.wandb:
+                    wandb.log({"step": step + 1  , "train_loss": running_loss})
+          
+
             if step % 1000 == 0 and step > 0:
                 model.eval()
                 import random 
@@ -122,7 +127,7 @@ def train(args):
         
         epoch_loss = running_loss / len(train_loader)
         print(f"Epoch {epoch+1}/{args.epoch} - Train Loss: {epoch_loss:.4f}")
-
+        
 
         # Validation loop
         if step % 1000 == 0 and step > 0:
@@ -138,7 +143,7 @@ def train(args):
             print(f"Validation Loss: {epoch_val_loss:.4f}")
 
             if args.wandb:
-                wandb.log({"epoch": epoch + 1, "train_loss": epoch_loss, "val_loss": epoch_val_loss})
+                wandb.log({"step": step + 1, "val_loss": epoch_val_loss})
 
     print("Training Complete!")
     import os 
