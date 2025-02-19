@@ -123,12 +123,12 @@ def train(args):
                 
                 model.train()
 
-        if step % 100 == 0 and step > 0:
-            step_loss = running_loss / (step + 1)  # Correct loss calculation
-            print(f"Step {step+1} - Train Loss: {step_loss:.4f}")
+            if step % 100 == 0 and step > 0:
+                step_loss = running_loss / (step + 1)  # Correct loss calculation
+                print(f"Step {step+1} - Train Loss: {step_loss:.4f}")
     
-            if args.wandb:
-                wandb.log({"step": step + 1, "train_loss": step_loss})  # Log step loss correctly
+                if args.wandb:
+                    wandb.log({"step": step + 1, "train_loss": step_loss})  # Log step loss correctly
 
 
         epoch_loss = running_loss / len(train_loader)
