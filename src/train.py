@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer 
+from transformers import get_linear_schedule_with_warmup
 from generate import text_to_token_ids, token_ids_to_text, generate
 
 # Set random seed for reproducibility
@@ -63,6 +64,9 @@ def train(args):
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    num_training_steps = len(train_loader) * args.epoch
+    num_warmup_steps = int(0.1 * num_training_steps)  
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps)       
 
     for epoch in range(args.epoch):
         model.train()
@@ -79,6 +83,7 @@ def train(args):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target_batch.view(-1))
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
             running_loss += loss.item()
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
