@@ -6,13 +6,16 @@ import numpy as np
 import torch.nn as nn 
 from tqdm.auto import tqdm 
 from model import build_model
+from utils import GPTDatasetV1  
 import torch.nn.functional as F
 from datasets import load_dataset
-from utils import GPTDatasetV1  
 from torch.utils.data import DataLoader
+from transformers import AutoTokenizer 
+from generate import text_to_token_ids, token_ids_to_text, generate
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
+tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Processing data for the model")
@@ -93,6 +96,18 @@ def train(args):
 
         epoch_loss = running_loss / len(train_loader)
         print(f"Epoch {epoch+1}/{args.epoch} - Train Loss: {epoch_loss:.4f}")
+
+        if step % 100 == 0 and step > 0:
+              START_CONTEXT = "As an AI language model,"
+              token_ids = generate(
+                    model=model.module,
+                    device=device,
+                    idx=text_to_token_ids(START_CONTEXT, tokenizer),
+                    max_new_tokens=20,
+                    context_len=args.max_len,
+                )
+              sample_text = token_ids_to_text(token_ids, tokenizer)
+              print(f"\nSample text:", sample_text)
 
         # Validation loop
         if step % 1000 == 0 and step > 0:

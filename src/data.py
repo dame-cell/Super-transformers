@@ -31,7 +31,7 @@ def preprocess_and_save(token_ids, max_length, stride, save_path):
     
     np.savez(save_path, inputs=np.array(inputs), targets=np.array(targets))
 
-def split_and_save(token_ids, split_ratio=0.9, max_length=512, stride=256):
+def split_and_save(token_ids, split_ratio=0.9, max_length=1024, stride=256):
     tokens_tensor = torch.tensor(token_ids)
     num_samples = len(tokens_tensor)
     

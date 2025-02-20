@@ -184,39 +184,12 @@ class GPT2Decoder(nn.Module):
         x = self.norm(x)
         return self.lm_head(x)
     
-
-    def generate(self, 
-            input_ids: torch.Tensor, 
-            max_length: int,
-            temperature: float = 1.0) -> torch.Tensor:
-        """
-        Simple autoregressive text generation for enwik8 dataset.
-        Args:
-            input_ids: Input tensor of shape [batch_size, seq_length]
-            max_length: Maximum length of sequence to generate
-            temperature: Sampling temperature (higher = more random)
-        """
-        # Generate until we reach max_length
-        while input_ids.size(1) < max_length:
-            # Get logits for next token
-            logits = self(input_ids)[:, -1, :] / temperature
-            
-            # Convert to probabilities
-            probs = F.softmax(logits, dim=-1)
-            
-            # Sample next token
-            next_token = torch.multinomial(probs, num_samples=1)
-            
-            # Append to sequence
-            input_ids = torch.cat([input_ids, next_token], dim=1)
-        
-        return input_ids
         
 def build_model(size: str, ssmax: bool = True, use_pos_enc: bool = False):
     config = {
-        "small": {"vocab_size": 20000, "dim": 256, "num_heads": 4, "num_layers": 4, "ffn_dim": 1024, "max_len": 1024, "dropout": 0.2},
-        "default": {"vocab_size": 30000, "dim": 512, "num_heads": 8, "num_layers": 6, "ffn_dim": 2048, "max_len": 2048, "dropout": 0.2},
-        "large": {"vocab_size": 50000, "dim": 1024, "num_heads": 16, "num_layers": 12, "ffn_dim": 4096, "max_len": 4096, "dropout": 0.2},
+        "small": {"vocab_size": 20000, "dim": 512, "num_heads": 4, "num_layers": 4, "ffn_dim": 1024, "max_len": 1024, "dropout": 0.2},
+        "default": {"vocab_size": 40257, "dim": 1024, "num_heads": 8, "num_layers": 6, "ffn_dim": 2048, "max_len": 2048, "dropout": 0.2},
+        "large": {"vocab_size": 50257, "dim": 2046, "num_heads": 16, "num_layers": 12, "ffn_dim": 4096, "max_len": 4096, "dropout": 0.2},
     }
 
     if size not in config:
