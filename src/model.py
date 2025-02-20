@@ -29,7 +29,7 @@ def scaled_dot_product(q: torch.Tensor,
         # Get context size and apply SSMax scaling
         n = k.size(-2)
         scale = scale_param.unsqueeze(-1) * torch.log(torch.tensor(n, dtype=q.dtype, device=q.device))
-        scale = scale.clamp(min=1e-5)  # Prevent numerical instability
+        #scale = scale.clamp(min=1e-5)  # Prevent numerical instability
         q = scale.unsqueeze(-1) * q
     
     scores = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(d_k)
