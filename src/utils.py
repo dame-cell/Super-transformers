@@ -1,21 +1,20 @@
-from torch.utils.data import Dataset
 import torch 
+import numpy as np 
+from torch.utils.data import Dataset 
 
-class TextSamplerDataset(Dataset):
-    def __init__(self, data, seq_len):
-        super().__init__()
-        self.data = data
-        self.seq_len = seq_len
-
-    def __getitem__(self, index):
-        rand_start = torch.randint(0, self.data.size(0) - self.seq_len - 1, (1,)).item()
-        full_seq = self.data[rand_start : rand_start + self.seq_len + 1].long()
-
-        input_seq = full_seq[:-1]  # First seq_len tokens
-        target_seq = full_seq[1:]  # Shifted by one token
-
-        return input_seq.cuda(), target_seq.cuda()  # Return two tensors
+class GPTDatasetV1(Dataset):
+    def __init__(self, npz_file_path):
+        # Load precomputed inputs and targets from .npz file
+        data = np.load(npz_file_path)
+        self.inputs = data['inputs']
+        self.targets = data['targets']
+        
+        self.num_samples = len(self.inputs)
 
     def __len__(self):
-        return self.data.size(0) // self.seq_len
+        return self.num_samples
 
+    def __getitem__(self, idx):
+        input_chunk = self.inputs[idx]
+        target_chunk = self.targets[idx]
+        return torch.tensor(input_chunk), torch.tensor(target_chunk)

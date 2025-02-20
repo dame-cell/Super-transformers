@@ -4,3 +4,4 @@ triformer
 transformers 
 datasets 
 accelerate 
+tokenizers 
