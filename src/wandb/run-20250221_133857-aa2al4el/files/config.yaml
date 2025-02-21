@@ -1,0 +1,63 @@
+_wandb:
+    value:
+        cli_version: 0.19.6
+        m: []
+        python_version: 3.10.10
+        t:
+            "1":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 51
+                - 53
+                - 55
+            "2":
+                - 1
+                - 5
+                - 11
+                - 49
+                - 51
+                - 53
+                - 55
+            "3":
+                - 16
+                - 23
+                - 55
+            "4": 3.10.10
+            "5": 0.19.6
+            "6": 4.49.0
+            "8":
+                - 5
+            "12": 0.19.6
+            "13": linux-x86_64
+batch_size:
+    value: 2
+dataset_args:
+    value: null
+epoch:
+    value: 6
+generating_step:
+    value: 5000
+hf_data:
+    value: null
+lr:
+    value: 0.001
+max_len:
+    value: 1024
+size:
+    value: default
+ssmax:
+    value: true
+test_data:
+    value: test_data.npz
+text_column:
+    value: text
+train_data:
+    value: train_data.npz
+use_pos_enc:
+    value: false
+vocab_size:
+    value: 50257
+wandb:
+    value: true
