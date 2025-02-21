@@ -48,6 +48,7 @@ def to_device(data, device):
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    wandb.login(key="04098c64a0b88d5f4ff90335b7f75613041420c6")
     if args.wandb:
         wandb.init(project="super-transformers", config=args)
 
