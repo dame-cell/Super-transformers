@@ -31,11 +31,15 @@ def tokenize(tokenizer, data, batch_size=1000):
     encoded_data = []
     
     for i in tqdm(range(0, len(data), batch_size), desc="Tokenizing"):
-        batch = [item['text'] for item in data[i:i+batch_size]]
+        batch = data[i:i+batch_size]  # Extract a batch from dataset
+        if isinstance(batch, dict):  # Fix for Dataset format
+            batch = batch["text"] 
+        
         encoded_batch = tokenizer(batch, truncation=False, padding=False)["input_ids"]
         encoded_data.extend(encoded_batch)
     
     return [token for text in encoded_data for token in text]
+
 
 def split_and_save(token_ids, split_ratio=0.9, max_length=1024, stride=256):
     tokens_tensor = torch.tensor(token_ids)
