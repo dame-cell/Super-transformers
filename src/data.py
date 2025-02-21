@@ -27,12 +27,14 @@ def preprocess_and_save(token_ids, max_length, stride, save_path):
     
     np.savez(save_path, inputs=np.array(inputs), targets=np.array(targets))
 
+
+# Maybe find a better way to tokenize and batch for better Space complexity 
 def tokenize(tokenizer, data, batch_size=1000):
     encoded_data = []
     
     for i in tqdm(range(0, len(data), batch_size), desc="Tokenizing"):
-        batch = data[i:i+batch_size]  # Extract a batch from dataset
-        if isinstance(batch, dict):  # Fix for Dataset format
+        batch = data[i:i+batch_size] 
+        if isinstance(batch, dict):  
             batch = batch["text"] 
         
         encoded_batch = tokenizer(batch, truncation=False, padding=False)["input_ids"]

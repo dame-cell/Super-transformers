@@ -34,6 +34,8 @@ def parse_args():
     parser.add_argument('--dataset_args', type=dict, help="Arguments for the Hugging Face dataset")
     parser.add_argument('--text_column', type=str, default="text", help="Text column in the dataset")
     parser.add_argument('--vocab_size', type=int, default=50257, help="Vocabulary size for the dataset")
+    parser.add_argument('--generating_step', type=int, default=300, help="what step to generate during training")
+    
 
     return parser.parse_args()
 
@@ -45,6 +47,11 @@ def to_device(data, device):
     return data  # If it's not a tensor, return as is
 
 
+import os
+import torch
+import torch.nn.functional as F
+from tqdm import tqdm
+
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -52,11 +59,8 @@ def train(args):
     if args.wandb:
         wandb.init(project="super-transformers", config=args)
 
-
     model = build_model(size=args.size, ssmax=args.ssmax, use_pos_enc=args.use_pos_enc)
     model.to(device)
-
-
 
     train_dataset = GPTDatasetV1(args.train_data)
     val_dataset = GPTDatasetV1(args.test_data)
@@ -69,6 +73,9 @@ def train(args):
     num_warmup_steps = int(0.1 * num_training_steps)  
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps)       
 
+    best_val_loss = float("inf")  # Track best validation loss
+    best_model_path = "saved_models/best_model.pth"  # Path to save best model
+
     for epoch in range(args.epoch):
         model.train()
         running_loss = 0.0
@@ -80,7 +87,6 @@ def train(args):
             optimizer.zero_grad()
             logits = model(input_batch)
 
-            # Corrected loss computation
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target_batch.view(-1))
             loss.backward()
             optimizer.step()
@@ -90,16 +96,13 @@ def train(args):
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
             progress_bar.update(1)
 
-            
-
-            if step % 100 == 0 and step > 0:
+            if step % 300 == 0 and step > 0:
                 step_loss = running_loss / (step + 1)  
                 print(f"Step {step+1} - Train Loss: {step_loss:.4f}")
-    
                 if args.wandb:
-                    wandb.log({"step": step + 1, "train_loss": step_loss})  # Log step loss correctly
+                    wandb.log({"step": step + 1, "train_loss": step_loss})
 
-            if step % 300 == 0 and step > 0:
+            if step % args.generating_step == 0 and step > 0:
                 START_CONTEXT = "As an AI language model,"
                 token_ids = generate(
                         model=model,
@@ -111,32 +114,30 @@ def train(args):
                 sample_text = token_ids_to_text(token_ids, tokenizer)
                 print(f"\nSample text:", sample_text)
 
-            # Validation loop
-            if step % 300 == 0 and step > 0:
-                model.eval()
-                val_loss = 0.0
-                with torch.no_grad():
-                    for val_input, val_target in tqdm(val_loader, desc="Validating", leave=False):
-                        val_input, val_target = to_device(val_input, device), to_device(val_target, device)
-                        val_logits = model(val_input)
-                        val_loss += F.cross_entropy(val_logits.view(-1, val_logits.size(-1)), val_target.view(-1)).item()
+        # Validation loop after every epoch
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_input, val_target in tqdm(val_loader, desc="Validating", leave=False):
+                val_input, val_target = to_device(val_input, device), to_device(val_target, device)
+                val_logits = model(val_input)
+                val_loss += F.cross_entropy(val_logits.view(-1, val_logits.size(-1)), val_target.view(-1)).item()
 
-                epoch_val_loss = val_loss / len(val_loader)
-                print(f"Validation Loss: {epoch_val_loss:.4f}")
+        epoch_val_loss = val_loss / len(val_loader)
+        print(f"Validation Loss: {epoch_val_loss:.4f}")
 
-                if args.wandb:
-                    wandb.log({"step": step + 1, "val_loss": epoch_val_loss})
+        if args.wandb:
+            wandb.log({"epoch": epoch + 1, "val_loss": epoch_val_loss})
 
-    epoch_loss = running_loss / len(train_loader)
-    print(f"Epoch {epoch+1}/{args.epoch} - Train Loss: {epoch_loss:.4f}")
+        # Save best model
+        if epoch_val_loss < best_val_loss:
+            best_val_loss = epoch_val_loss
+            os.makedirs("saved_models", exist_ok=True)
+            torch.save(model.state_dict(), best_model_path)
+            print(f"New best model saved at {best_model_path} with validation loss: {best_val_loss:.4f}")
 
-    print("Training Complete!")
-    import os 
-    save_dir = "saved_models"
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "super_transformer.pth")
-    torch.save(model.state_dict(), save_path)
-    print(f"Model saved at {save_path}")
+    print("Training Complete!")  
+    print(f"Best model saved at {best_model_path} with lowest validation loss: {best_val_loss:.4f}")
 
     if args.wandb:
         wandb.finish()
