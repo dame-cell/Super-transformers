@@ -35,9 +35,9 @@ def parse_args():
     parser.add_argument('--dataset_args', type=dict, help="Arguments for the Hugging Face dataset")
     parser.add_argument('--text_column', type=str, default="text", help="Text column in the dataset")
     parser.add_argument('--vocab_size', type=int, default=50257, help="Vocabulary size for the dataset")
-    parser.add_argument('--generating_step', type=int, default=300, help="what step to generate during training")
-    parser.add_argument('--validation_step', type=int, default=300, help="what step to validate  during training")
-    parser.add_argument('--save_model', type=int, default=300, help="what step to save  during training")
+    parser.add_argument('--generating_step', type=int, default=2000, help="what step to generate during training")
+    parser.add_argument('--validation_step', type=int, default=1000, help="what step to validate  during training")
+    parser.add_argument('--save_model', type=int, default=1000, help="what step to save  during training")
 
 
     return parser.parse_args()
@@ -54,99 +54,170 @@ def to_device(data, device):
 
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    wandb.login(key="04098c64a0b88d5f4ff90335b7f75613041420c6")
+    
+    # Initialize wandb
     if args.wandb:
+        wandb.login(key="04098c64a0b88d5f4ff90335b7f75613041420c6")
         wandb.init(project="super-transformers", config=args)
 
+    # Model setup
     model = build_model(size=args.size, ssmax=args.ssmax, use_pos_enc=args.use_pos_enc)
     model.to(device)
-
+    
+    # Dataset and loader setup
     train_dataset = GPTDatasetV1(args.train_data)
     val_dataset = GPTDatasetV1(args.test_data)
     
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    # Training setup
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=args.lr,
+        betas=(0.9, 0.95),  # Modified beta2 for better stability
+        eps=1e-8,
+        weight_decay=0.1    # L2 regularization
+    )
+
+    # Learning rate schedule setup
     num_training_steps = len(train_loader) * args.epoch
-    num_warmup_steps = int(0.1 * num_training_steps)  
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps)       
+    num_warmup_steps = min(1000, int(0.05 * num_training_steps))  # Shorter warmup for single epoch
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps)
 
-    best_val_loss = float("inf")  # Track best validation loss
-    best_model_path = "saved_models/best_model.pth"  # Path to save best model
+    # Training state tracking
+    best_val_loss = float("inf")
+    best_model_path = "saved_models/best_model.pth"
+    os.makedirs("saved_models", exist_ok=True)
+    
+    # Gradient accumulation setup
+    accumulation_steps = 4  # Adjust based on your batch size
+    
+    def evaluate_model():
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for val_input, val_target in tqdm(val_loader, desc="Validating", leave=False):
+                val_input, val_target = to_device(val_input, device), to_device(val_target, device)
+                val_logits = model(val_input)
+                val_loss += F.cross_entropy(
+                    val_logits.view(-1, val_logits.size(-1)), 
+                    val_target.view(-1),
+                    label_smoothing=0.1  # Add label smoothing
+                ).item()
+        return val_loss / len(val_loader)
 
+    def generate_sample():
+        START_CONTEXT = "As an AI language model,"
+        token_ids = generate(
+            model=model,
+            device=device,
+            idx=text_to_token_ids(START_CONTEXT, tokenizer),
+            max_new_tokens=20,
+            context_len=args.max_len,
+            temperature=0.8  # Add temperature for better sampling
+        )
+        return token_ids_to_text(token_ids, tokenizer)
+
+    # Training loop
     for epoch in range(args.epoch):
         model.train()
         running_loss = 0.0
         progress_bar = tqdm(total=len(train_loader), desc=f"Epoch {epoch+1}/{args.epoch}", leave=True)
+        
+        # Learning rate warmup tracking
+        if epoch == 0:
+            print(f"Warmup steps: {num_warmup_steps}")
+            print(f"Total steps: {num_training_steps}")
 
         for step, (input_batch, target_batch) in enumerate(train_loader):
             input_batch, target_batch = to_device(input_batch, device), to_device(target_batch, device)
-
-            optimizer.zero_grad()
+            
+            # Forward pass
             logits = model(input_batch)
-
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target_batch.view(-1))
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), 
+                target_batch.view(-1),
+                label_smoothing=0.1  # Add label smoothing
+            )
+            
+            # Scale loss for gradient accumulation
+            loss = loss / accumulation_steps
             loss.backward()
-            optimizer.step()
-            scheduler.step()
 
-            running_loss += loss.item()
-            progress_bar.set_postfix(loss=f"{loss.item():.4f}")
+            # Gradient tracking
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
+            # Update on accumulation boundary
+            if (step + 1) % accumulation_steps == 0:
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+
+            # Loss tracking
+            running_loss += loss.item() * accumulation_steps
+            current_lr = optimizer.param_groups[0]['lr']
+            
+            # Update progress bar
+            progress_bar.set_postfix({
+                'loss': f"{loss.item() * accumulation_steps:.4f}",
+                'lr': f"{current_lr:.2e}",
+                'grad': f"{grad_norm:.2f}"
+            })
             progress_bar.update(1)
 
+            # Periodic logging
             if step % 500 == 0 and step > 0:
-                step_loss = running_loss / (step + 1)  
-                print(f"Step {step+1} - Train Loss: {step_loss:.4f}")
+                avg_loss = running_loss / (step + 1)
+                print(f"\nStep {step+1} - Train Loss: {avg_loss:.4f} - LR: {current_lr:.2e} - Grad Norm: {grad_norm:.2f}")
                 if args.wandb:
-                    wandb.log({"step": step + 1, "train_loss": step_loss})
+                    wandb.log({
+                        "step": step + 1,
+                        "train_loss": avg_loss,
+                        "learning_rate": current_lr,
+                        "gradient_norm": grad_norm
+                    })
 
+            # Generate sample text
             if step % args.generating_step == 0 and step > 0:
-                START_CONTEXT = "As an AI language model,"
-                token_ids = generate(
-                        model=model,
-                        device=device,
-                        idx=text_to_token_ids(START_CONTEXT, tokenizer),
-                        max_new_tokens=20,
-                        context_len=args.max_len,
-                    )
-                sample_text = token_ids_to_text(token_ids, tokenizer)
-                print(f"\nSample text:", sample_text)
+                sample_text = generate_sample()
+                print(f"\nSample text: {sample_text}")
 
+            # Validation
             if step % args.validation_step == 0 and step > 0:
-                model.eval()
-                val_loss = 0.0
-                with torch.no_grad():
-                    for val_input, val_target in tqdm(val_loader, desc="Validating", leave=False):
-                        val_input, val_target = to_device(val_input, device), to_device(val_target, device)
-                        val_logits = model(val_input)
-                        val_loss += F.cross_entropy(val_logits.view(-1, val_logits.size(-1)), val_target.view(-1)).item()
-
-                epoch_val_loss = val_loss / len(val_loader)
-                print(f"Validation Loss: {epoch_val_loss:.4f}")
-
+                epoch_val_loss = evaluate_model()
+                print(f"\nValidation Loss: {epoch_val_loss:.4f}")
+                
                 if args.wandb:
-                    wandb.log({"epoch": epoch + 1, "val_loss": epoch_val_loss})
-
-            
-            # Save best model
-            if step % args.save_model == 0 and step > 0 : 
+                    wandb.log({
+                        "epoch": epoch + 1,
+                        "val_loss": epoch_val_loss
+                    })
+                
+                # Save best model
                 if epoch_val_loss < best_val_loss:
                     best_val_loss = epoch_val_loss
-                    os.makedirs("saved_models", exist_ok=True)
-                    torch.save(model.state_dict(), best_model_path)
-                    print(f"New best model saved at {best_model_path} with validation loss: {best_val_loss:.4f}")
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'scheduler_state_dict': scheduler.state_dict(),
+                        'val_loss': best_val_loss,
+                    }, best_model_path)
+                    print(f"New best model saved with validation loss: {best_val_loss:.4f}")
+                
+                # Return to training mode
+                model.train()
 
-    print("Training Complete!")  
-    print(f"Best model saved at {best_model_path} with lowest validation loss: {best_val_loss:.4f}")
+        progress_bar.close()
+
+    print("Training Complete!")
+    print(f"Best validation loss: {best_val_loss:.4f}")
 
     if args.wandb:
         wandb.finish()
 
-  
 if __name__ == "__main__":
-  print("Training the model")
-  args = parse_args()
-  train(args) 
-
+    print("Training the model")
+    args = parse_args()
+    train(args)
