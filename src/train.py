@@ -23,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Processing data for the model")
     parser.add_argument('--max_len', type=int, default=1024, help="context length for the model")
     parser.add_argument('--epoch', type=int, default=1, help="Number of epochs for training")
-    parser.add_argument('--lr', type=float, default=0.001, help="Learning rate for training")
+    parser.add_argument('--lr', type=float, default=5e-5, help="Learning rate for training")  # or
     parser.add_argument('--train_data', type=str, help="path to the train npz file")
     parser.add_argument('--test_data', type=str,  help="path to the test npz file")
     parser.add_argument('--wandb', type=bool, default=False, help="Use Weights and Biases for logging")
@@ -145,7 +145,7 @@ def train(args):
             loss = loss / accumulation_steps
             loss.backward()
 
-            # Gradient tracking
+            # Gradient trackingcl
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             
             # Update on accumulation boundary
