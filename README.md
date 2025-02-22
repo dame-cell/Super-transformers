@@ -1,4 +1,8 @@
 # Super-transformers
+> **Important**  
+> This is not a formal implementation of the referenced papers. Instead, it's a simple experiment to explore these new ideas and test them out for fun.
+
+
 We code a GPT2 transformers  but instead we use these three new ideas: 
 
 - Scalable softmax
@@ -36,11 +40,16 @@ where:
 - d  is the hidden dimension.
 
 
-## Training without Positional Encodings 
+## Training without Positional Encodings
 
+<p align="center">
+  <img src="src/images/pos_enc.png" alt="pos_enc" width="400"/>
+</p>
 
 ## Super Weights 
-
+<p align="center">
+  <img src="src/images/super_weights.png" alt="super_weights" width="400"/>
+</p>
 
 
 ### Citations
