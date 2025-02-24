@@ -3,53 +3,71 @@
 > This is not a formal implementation of the referenced papers. Instead, it's a simple experiment to explore these new ideas and test them out for fun.
 
 
-We code a GPT2 transformers  but instead we use these three new ideas: 
+## Overview
+Super-transformers is an experimental implementation that explores modifications to the standard GPT-2 transformer architecture. This project combines three key architectural innovations:
 
-- Scalable softmax
-- Try to train it without the positional encodings
-- super weights for pruning during inference
+- Scalable Softmax: Implementation of a modified attention mechanism using scalable softmax to improve computational efficiency and potentially enhance model performance on longer sequences.
 
-## Scalable Softmax 
+- Positional Encoding Ablation: Exploring the model's capability to learn without explicit positional encodings, investigating whether contextual information alone is sufficient for sequence modeling.
 
-In traditional decoder-only Transformers, a major bottleneck comes from the quadratic growth of attention computations, which leads to attention fading—where softmax struggles to distinguish relevant tokens as sequence lengths increase.
-
-This paper highlights the weaknesses of the original softmax, showing how it performs poorly in large-scale settings. Scalable Softmax (SSMax) introduces a new way to scale the logits before applying softmax, making attention computations more efficient and preventing the loss of crucial information in longer sequences.
-
-#### Standard Softmax:
-$$
-\text{Softmax}(x_i) = \frac{e^{x_i}}{\sum_{j} e^{x_j}}
-$$
-
-#### Scalable Softmax (SSMax):
-
-$$
-\text{SSMax}(z_i) = \frac{e^{(s \log n)z_i}}{\sum_{j=1}^{n} e^{(s \log n)z_j}}
-$$
-
-where:
--  s is the scaling factor,
--  n  is the input size.
-
-#### SSMax in Attention Mechanisms:
-$$
-a_n = \text{SSMax} \left( \frac{q_n K^T}{\sqrt{d}} \right) = \text{Softmax} \left( \frac{(s \log n) q_n K^T}{\sqrt{d}} \right)
-$$
-
-where:
-- q_n  and  K  are the query and key matrices in attention,
-- d  is the hidden dimension.
+- Super Weights for Pruning: Implementing dynamic weight pruning mechanisms that can be applied during inference time to reduce computational overhead without significant performance degradation.
 
 
-## Training without Positional Encodings
+## Experimental Results
+Our preliminary experiments compare training and validation loss between:
+
+- A model using scalable softmax without positional encodings
+- A model using standard softmax with positional encodings
 
 <p align="center">
-  <img src="src/images/pos_enc.png" alt="pos_enc" width="400"/>
+  <img src="src/images/model_comparison.png" alt="Model Comparison" width="800"/>
 </p>
 
-## Super Weights 
 <p align="center">
-  <img src="src/images/super_weights.png" alt="super_weights" width="400"/>
+  <em>Figure 1: Comparison of training and validation losses between different architectural configurations.</em>
 </p>
+
+## Getting Started
+```bash
+git clone  https://github.com/dame-cell/Super-transformers.git
+cd Super-transformers
+pip install -r requirements.txt 
+cd src
+```
+
+## Dataset
+This project uses the [fineweb-small](https://huggingface.co/datasets/eliplutchok/fineweb-small-sample) dataset from Hugging Face. The preprocessing script handles downloading and preparing the data.
+
+
+```bash
+python3 data.py \
+    --max_length 1024 \
+    --sample_size 100000 \
+    --data_name eliplutchok/fineweb-small-sample \
+    --stride 256 \
+    --split_ratio 0.9 \
+    --batch_size 1000 \
+    --output_dir .
+
+```
+
+```bash 
+python3 train.py \
+    --train_data path_to_train_data \
+    --test_data path_to_test_data \
+    --size default \
+    --ssmax True \
+    --use_pos_enc False \
+    --wandb False \
+    --batch_size 6 \
+    --generating_step 2000 \
+    --validation_step 1000 \
+    --save_model 1000 \
+    --max_len 1024 \
+    --epoch 1 \
+    --lr 5e-5 \
+    --vocab_size 50257
+```
 
 
 ### Citations

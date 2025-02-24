@@ -31,9 +31,6 @@ def parse_args():
     parser.add_argument('--use_pos_enc', type=bool, default=False, help="whether to use or not use Positional encodings")
     parser.add_argument('--batch_size', type=int, default=6, help="Batch size for training")
     parser.add_argument('--size', type=str, default="default", help="whether to use a small or default or large architecture ")
-    parser.add_argument('--hf_data', type=str,default=None, help="Path to the Hugging Face dataset")
-    parser.add_argument('--dataset_args', type=dict, help="Arguments for the Hugging Face dataset")
-    parser.add_argument('--text_column', type=str, default="text", help="Text column in the dataset")
     parser.add_argument('--vocab_size', type=int, default=50257, help="Vocabulary size for the dataset")
     parser.add_argument('--generating_step', type=int, default=2000, help="what step to generate during training")
     parser.add_argument('--validation_step', type=int, default=1000, help="what step to validate  during training")
@@ -57,7 +54,6 @@ def train(args):
     
     # Initialize wandb
     if args.wandb:
-        wandb.login(key="04098c64a0b88d5f4ff90335b7f75613041420c6")
         wandb.init(project="super-transformers", config=args)
 
     # Model setup
