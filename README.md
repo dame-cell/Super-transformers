@@ -66,7 +66,7 @@ python3 train.py \
     --save_model 1000 \
     --epoch 1 \
 ```
-
+## Inference 
 
 ### Citations
 
