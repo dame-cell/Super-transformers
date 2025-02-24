@@ -56,18 +56,15 @@ python3 data.py \
 python3 train.py \
     --train_data path_to_train_data \
     --test_data path_to_test_data \
-    --size default \
+    --size small \
     --ssmax True \
     --use_pos_enc False \
     --wandb False \
-    --batch_size 6 \
+    --batch_size 2 \
     --generating_step 2000 \
     --validation_step 1000 \
     --save_model 1000 \
-    --max_len 1024 \
     --epoch 1 \
-    --lr 5e-5 \
-    --vocab_size 50257
 ```
 
 
