@@ -50,6 +50,7 @@ python3 data.py \
     --output_dir .
 
 ```
+## Training 
 
 ```bash 
 python3 train.py \
