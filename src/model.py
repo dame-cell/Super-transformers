@@ -187,15 +187,39 @@ class GPT2Decoder(nn.Module):
         
 def build_model(size: str, ssmax: bool = True, use_pos_enc: bool = False):
     config = {
-        "small": {"vocab_size": 50257, "dim": 768, "num_heads": 8, "num_layers": 6, "ffn_dim": 2048, "max_len": 1024, "dropout": 0.1},
-        "default": {"vocab_size": 50257, "dim": 1024, "num_heads": 12, "num_layers": 12, "ffn_dim": 3072, "max_len": 2048, "dropout": 0.1},
-        "large": {"vocab_size": 50257, "dim": 2046, "num_heads": 16, "num_layers": 12, "ffn_dim": 4096, "max_len": 4096, "dropout": 0.1},
+        "small": {
+            "vocab_size": 50257, 
+            "dim": 768, 
+            "num_heads": 12, 
+            "num_layers": 12, 
+            "ffn_dim": 3072, 
+            "max_len": 1024, 
+            "dropout": 0.1
+        },
+        "default": {
+            "vocab_size": 50257, 
+            "dim": 1024, 
+            "num_heads": 16, 
+            "num_layers": 24, 
+            "ffn_dim": 4096, 
+            "max_len": 2048, 
+            "dropout": 0.1
+        },
+        "large": {
+            "vocab_size": 50257, 
+            "dim": 1280, 
+            "num_heads": 20, 
+            "num_layers": 36, 
+            "ffn_dim": 5120, 
+            "max_len": 4096, 
+            "dropout": 0.1
+        },
     }
 
     if size not in config:
         raise ValueError("Please choose between 'small', 'default', and 'large' for size.")
     
-    print(f"We are using model size :{size}")
+    print(f"We are using model size: {size}")
     return GPT2Decoder(
         vocab_size=config[size]['vocab_size'],
         dim=config[size]['dim'],
@@ -207,7 +231,6 @@ def build_model(size: str, ssmax: bool = True, use_pos_enc: bool = False):
         ssmax=ssmax,
         use_pos_enc=use_pos_enc  
     )
-
     
 def test_model():
     """Test the model with example inputs."""
