@@ -187,15 +187,8 @@ class GPT2Decoder(nn.Module):
         
 def build_model(size: str, ssmax: bool = True, use_pos_enc: bool = False):
     config = {
-        "small": {
-            "vocab_size": 50257, 
-            "dim": 768, 
-            "num_heads": 12, 
-            "num_layers": 12, 
-            "ffn_dim": 3072, 
-            "max_len": 1024, 
-            "dropout": 0.1
-        },
+        "small": {"vocab_size": 50257, "dim": 768, "num_heads": 8, "num_layers": 6, "ffn_dim": 2048, "max_len": 1024, "dropout": 0.1},
+
         "default": {
             "vocab_size": 50257, 
             "dim": 1024, 
