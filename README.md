@@ -66,7 +66,18 @@ python3 train.py \
     --save_model 1000 \
     --epoch 1 \
 ```
-## Inference 
+## Models 
+
+> **Warning**  
+> Please note that the model was only trained on 100k rows for a single epoch, so its generation quality may be limited.
+
+You can find the Pretrained Models here: 
+| **Model**             | **Link**                               |
+|---------------------------|-----------------------------------------|
+| Model(SSMax with no pos_enc)                      | [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model.pth) 
+| Model(no SSMax with pos_enc)                      |  [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model_2.pth) 
+
+## Inference using Super-Weights
 
 ### Citations
 
