@@ -10,7 +10,6 @@ Super-transformers is an experimental implementation that explores modifications
 
 - Positional Encoding Ablation: Exploring the model's capability to learn without explicit positional encodings, investigating whether contextual information alone is sufficient for sequence modeling.
 
-- Super Weights for Pruning: Implementing dynamic weight pruning mechanisms that can be applied during inference time to reduce computational overhead without significant performance degradation.
 
 
 ## Experimental Results
@@ -77,7 +76,6 @@ You can find the Pretrained Models here:
 | Model(SSMax with no pos_enc)                      | [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model.pth) 
 | Model(no SSMax with pos_enc)                      |  [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model_2.pth) 
 
-## Inference using Super-Weights
 
 ### Citations
 
