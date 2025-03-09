@@ -80,9 +80,29 @@ class MultiHeadAttention(nn.Module):
         return self.dropout(self.out_proj(values))
 
 class MultiHeadLatentAttention(nn.Module):
-    def __init__(self):
-        pass 
+    def __init__(self,dim:int,num_heads:int,ssmax:bool=False,dropout:float=0.1,compress_dim:int):
+        self.dim = dim 
+        self.num_heads = num_heads
+        self.head_dim = num_heads // dim  
+        self.ssmax = ssmax 
+        self.dropout = dropout
+        self.compress_dim  = compress_dim
 
+        self.wq = nn.Linear(dim,dim)
+        # compress kv 
+        self.compressk = nn.Linear(dim,compress_dim)
+        self.compressv = nn.Linear(dim,compress_dim)
+        # de compress kv 
+        self.decompressk = nn.Linear(compress_dim,dim)
+        self.decompressv = nn.Linear(compress_dim,dim)
+
+        self.dropout = nn.Dropout(dropout)
+        self.scale_param = nn.Parameter(torch.ones(num_heads)) if ssmax else None
+
+    def forward(self,x,mask=None): 
+        bs , seq_len , dim = x.size()
+        q = self.wq(x)
+        
 class PositionalEncoding(nn.Module):
     def __init__(self, dim: int, max_len: int = 512, dropout: float = 0.1):
         super().__init__()
@@ -231,54 +251,3 @@ def build_model(size: str, ssmax: bool = True, use_pos_enc: bool = False):
         ssmax=ssmax,
         use_pos_enc=use_pos_enc  
     )
-    
-def test_model():
-    """Test the model with example inputs."""
-    # Model parameters
-    vocab_size = 50257
-    dim = 768
-    num_heads = 12
-    num_layers = 12
-    ffn_dim = 3072
-    max_len = 1024
-    dropout = 0.1
-    ssmax = True
-    use_pos_enc = False
-    
-    # Initialize model
-    model = GPT2Decoder(
-        vocab_size=vocab_size,
-        dim=dim,
-        num_heads=num_heads,
-        num_layers=num_layers,
-        ffn_dim=ffn_dim,
-        max_len=max_len,
-        dropout=dropout,
-        ssmax=ssmax,
-        use_pos_enc=use_pos_enc
-    )
-    
-    # Create example input
-    batch_size = 2
-    seq_len = 32
-    input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
-    
-    # Test forward pass
-    output = model(input_ids)
-    print(f"Output shape: {output.shape}")
-    
-    # Test generation
-    generated = model.generate(
-        input_ids=input_ids[:, :1],  # Start with first token
-        max_length=16,
-        temperature=0.7,
-        top_k=50,
-        top_p=0.9
-    )
-    print(f"Generated sequence shape: {generated.shape}")
-    
-    # Print attention entropy
-    print(f"Average attention entropy: {model.get_attention_entropy().item():.4f}")
-
-if __name__ == "__main__":
-    test_model()
