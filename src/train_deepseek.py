@@ -46,7 +46,6 @@ def generate_samples(model, tokenizer, device, num_samples=3, max_length=50, tem
     # Set different prompt texts
     prompts = [
         "As an AI Language Model,I ",
-        "Today at school, I learned about"
     ]
 
     for i, prompt in enumerate(prompts[:num_samples]):
