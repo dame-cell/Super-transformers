@@ -79,29 +79,7 @@ class MultiHeadAttention(nn.Module):
         values = values.permute(0, 2, 1, 3).reshape(batch_size, seq_len, dim)
         return self.dropout(self.out_proj(values))
 
-class MultiHeadLatentAttention(nn.Module):
-    def __init__(self,dim:int,num_heads:int,ssmax:bool=False,dropout:float=0.1,compress_dim:int):
-        self.dim = dim 
-        self.num_heads = num_heads
-        self.head_dim = num_heads // dim  
-        self.ssmax = ssmax 
-        self.dropout = dropout
-        self.compress_dim  = compress_dim
 
-        self.wq = nn.Linear(dim,dim)
-        # compress kv 
-        self.compressk = nn.Linear(dim,compress_dim)
-        self.compressv = nn.Linear(dim,compress_dim)
-        # de compress kv 
-        self.decompressk = nn.Linear(compress_dim,dim)
-        self.decompressv = nn.Linear(compress_dim,dim)
-
-        self.dropout = nn.Dropout(dropout)
-        self.scale_param = nn.Parameter(torch.ones(num_heads)) if ssmax else None
-
-    def forward(self,x,mask=None): 
-        bs , seq_len , dim = x.size()
-        q = self.wq(x)
         
 class PositionalEncoding(nn.Module):
     def __init__(self, dim: int, max_len: int = 512, dropout: float = 0.1):
@@ -133,17 +111,15 @@ class TransformerDecoderLayer(nn.Module):
     def __init__(self, dim: int, num_heads: int, ffn_dim: int, dropout: float = 0.1, ssmax: bool = False):
         super().__init__()
         self.self_attn = MultiHeadAttention(dim, num_heads, ssmax, dropout)
-        self.self_latent_attn = MultiHeadLatentAttention()
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.mlp = MLP(dim, ffn_dim, dropout)
         self.dropout = nn.Dropout(dropout)
         
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None,latent_attention:bool=False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         # Pre-norm architecture for better training stability
         normalized = self.norm1(x)
-        if latent_attention:
-                attn_out = self._latent_attn(normalized,mask)
+        
         attn_out = self.self_attn(normalized, mask)
         x = x + self.dropout(attn_out)
         
