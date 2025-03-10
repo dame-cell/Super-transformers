@@ -19,6 +19,8 @@ from train import to_device
 # Set random seed for reproducibility
 torch.manual_seed(42)
 tokenizer = AutoTokenizer.from_pretrained("gpt2")
+tokenizer.pad_token = tokenizer.eos_token
+tokenizer.pad_token_id = tokenizer.eos_token_id  
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Processing data for the model")
@@ -105,7 +107,6 @@ def train(args):
     max_train_steps = args.epochs * num_update_steps_per_epoch
 
     # Learning rate scheduler using transformers' get_cosine_schedule_with_warmup
-    print("Setting up transformers cosine warmup scheduler...")
     warmup_steps = int(0.1 * max_train_steps)  # 10% of training for warmup
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer=optimizer,
@@ -126,7 +127,8 @@ def train(args):
             loss = F.cross_entropy(
                 logits.view(-1, logits.size(-1)),
                 target_batch.view(-1),
-                label_smoothing=0.1
+                label_smoothing=0.1,
+                ignore_index=tokenizer.pad_token_id 
             )
 
             loss = loss / args.grad_accumulation_steps
@@ -166,18 +168,20 @@ def train(args):
         val_loss = 0
         val_pbar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Val]")
 
+
         with torch.no_grad():
-            for step, (input_batch, target_batch) in enumerate(val_loader):
+            for step, (input_batch, target_batch) in enumerate(val_pbar):  
                 input_batch, target_batch = to_device(input_batch, device), to_device(target_batch, device)
                 logits = model(input_batch)
                 loss = F.cross_entropy(
                     logits.view(-1, logits.size(-1)),
                     target_batch.view(-1),
-                    label_smoothing=0.1  
+                    label_smoothing=0.1,
+                    ignore_index=tokenizer.pad_token_id
                 )
 
-                val_loss += loss.item()
-                val_pbar.set_postfix({"loss": loss.item()})
+        val_loss += loss.item()
+        val_pbar.set_postfix({"loss": loss.item()})  
 
         # Calculate average validation loss
         avg_val_loss = val_loss / len(val_loader)
