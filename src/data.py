@@ -1,11 +1,11 @@
-import numpy as np
 import torch
-from tqdm import tqdm
-from transformers import AutoTokenizer
-import argparse
-from datasets import load_dataset
 import logging
+import argparse
+import numpy as np
+from tqdm import tqdm
 from pathlib import Path
+from datasets import load_dataset
+from transformers import AutoTokenizer
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Processing data for the model")
