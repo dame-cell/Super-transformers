@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=6, help="Batch size for training")
     parser.add_argument('--size', type=str, default="default", help="whether to use a small or default or large architecture ")
     parser.add_argument('--generate', type=int, default=300, help="what step to generate during training")
-    parser.add_argument('--train_log', type=int, default=100, help="what step to log the train loss during training")
+    parser.add_argument('--log_interval', type=int, default=100, help="what step to log losses during training")
     parser.add_argument('--grad_accumulation_steps', type=int, default=2, help="Grad accumlation")
     parser.add_argument('--weight_decay', type=float, default=0.01, help="Weight decay")
 
@@ -69,10 +69,34 @@ def generate_samples(model, tokenizer, device, num_samples=3, max_length=50, tem
         print(f"Sample {i+1}:\nPrompt: {prompt}\nGenerated: {generated_text}\n")
 
 
+def validate(model, val_loader, device, tokenizer):
+    """Run validation on the entire validation set and return average loss."""
+    model.eval()
+    val_loss = 0
+    val_pbar = tqdm(val_loader, desc="Validation")
+    
+    with torch.no_grad():
+        for input_batch, target_batch in val_pbar:
+            input_batch, target_batch = to_device(input_batch, device), to_device(target_batch, device)
+            logits = model(input_batch)
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)),
+                target_batch.view(-1),
+                label_smoothing=0.1,
+                ignore_index=tokenizer.pad_token_id
+            )
+            val_loss += loss.item()
+            val_pbar.set_postfix({"loss": loss.item()})
+    
+    # Calculate average validation loss
+    avg_val_loss = val_loss / len(val_loader)
+    return avg_val_loss
+
+
 def train(args): 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.wandb:
-        wandb.login()  
+        wandb.login(key="04098c64a0b88d5f4ff90335b7f75613041420c6")
         wandb.init(project="mini-deepseek", config=vars(args))
 
     model = build_model(size=args.size, ssmax=args.ssmax, max_seq_len=args.max_seq_len)
@@ -148,55 +172,51 @@ def train(args):
             current_lr = lr_scheduler.get_last_lr()[0]
             train_pbar.set_postfix({"loss": current_loss, "lr": current_lr})
 
-            # Log to wandb
-            if args.wandb and step % args.train_log == 0:
-                wandb.log({
-                    "train_loss": current_loss,
-                    "learning_rate": current_lr,
-                    "global_step": global_step
-                })
-
-            if args.wandb and step % args.generate == 0:
+            # Check if we should log and validate
+            # Use (step + 1) to ensure step 20 is included
+            if (step + 1) % args.log_interval == 0:
+                # Run full validation
+                model.eval()  # Set model to evaluation mode
+                avg_val_loss = validate(model, val_loader, device, tokenizer)
+                val_losses.append(avg_val_loss)
+                
+                # Log both train and val loss together
+                if args.wandb:
+                    wandb.log({
+                        "train_loss": current_loss,
+                        "val_loss": avg_val_loss,
+                        "learning_rate": current_lr,
+                        "global_step": global_step
+                    })
+                
+                print(f"Step {step+1} - Train Loss: {current_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+                
+                # Save if best model
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
+                    torch.save(model.state_dict(), "llama_mla_best_model.pt")
+                    print(f"Saved best model with validation loss: {best_val_loss:.4f}")
+                
+                # Set model back to training mode
+                model.train()
+            
+            # Generate samples at specified intervals
+            if (step + 1) % args.generate == 0:
+                model.eval()  # Set to eval mode for generation
                 generate_samples(model, tokenizer, device)
-
-        # Calculate average training loss
+                model.train()  # Set back to training mode
+        
+        # Calculate average training loss for the epoch
         avg_train_loss = epoch_loss / len(train_loader)
         train_losses.append(avg_train_loss)
-
-        # Validation phase
-        model.eval()
-        val_loss = 0
-        val_pbar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{args.epochs} [Val]")
-
-
-        with torch.no_grad():
-            for step, (input_batch, target_batch) in enumerate(val_pbar):  
-                input_batch, target_batch = to_device(input_batch, device), to_device(target_batch, device)
-                logits = model(input_batch)
-                loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)),
-                    target_batch.view(-1),
-                    label_smoothing=0.1,
-                    ignore_index=tokenizer.pad_token_id
-                )
-
-        val_loss += loss.item()
-        val_pbar.set_postfix({"loss": loss.item()})  
-
-        # Calculate average validation loss
-        avg_val_loss = val_loss / len(val_loader)
+        
+        # Run full validation at the end of each epoch
+        avg_val_loss = validate(model, val_loader, device, tokenizer)
         val_losses.append(avg_val_loss)
-
+        
         # Log epoch results
         print(f"Epoch {epoch+1}/{args.epochs} - Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
-
-        if args.wandb:
-            wandb.log({
-                "epoch": epoch,
-                "train_loss_epoch": avg_train_loss,
-                "val_loss_epoch": avg_val_loss
-            })
-
+        
         # Save best model
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
