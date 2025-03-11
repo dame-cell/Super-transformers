@@ -248,7 +248,7 @@ class EncoderLayer(nn.Module):
         return x
 
 class MiniDeepseek(nn.Module):
-    def __init__(self, dim, num_heads, num_kv_heads, hidden_dim, dropout, num_layers, vocab_size, max_seq_len=2048,ssmax=False):
+    def __init__(self, dim, num_heads,hidden_dim, dropout, num_layers, vocab_size, max_seq_len=2048,ssmax=False):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
@@ -256,7 +256,7 @@ class MiniDeepseek(nn.Module):
         self.max_seq_len = max_seq_len
 
         # Calculate latent dimension for MLA based on num_kv_heads
-        self.latent_dim = dim // (num_heads // num_kv_heads)
+        self.latent_dim = dim // num_heads
 
         # Token embeddings
         self.token_embeddings = nn.Embedding(vocab_size, dim)
@@ -469,7 +469,6 @@ def build_model(size: str = "default", ssmax: bool = True, max_seq_len:int=2048)
         model = MiniDeepseek(
             dim=512,
             num_heads=8,
-            num_kv_heads=4,  # 2:1 ratio of query heads to key-value heads
             hidden_dim=1376,  # ~2.7x dimension for SwiGLU
             dropout=0.1,
             num_layers=6,
@@ -481,7 +480,6 @@ def build_model(size: str = "default", ssmax: bool = True, max_seq_len:int=2048)
         model = MiniDeepseek(
             dim=768,
             num_heads=12,
-            num_kv_heads=4,  # 3:1 ratio
             hidden_dim=2048,
             dropout=0.1,
             num_layers=12,
@@ -493,7 +491,6 @@ def build_model(size: str = "default", ssmax: bool = True, max_seq_len:int=2048)
         model = MiniDeepseek(
             dim=1024,
             num_heads=16,
-            num_kv_heads=4,  # 4:1 ratio
             hidden_dim=2816,  # ~2.75x dimension
             dropout=0.1,
             num_layers=24,
