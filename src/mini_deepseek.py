@@ -508,3 +508,10 @@ def build_model(size: str = "default", ssmax: bool = True, max_seq_len:int=2048)
     print(f"Trainable parameters: {param_info['trainable_params'] / 1e6:.2f}M")
     
     return model
+
+model = build_model(size="small",ssmax=True)
+print(f"model 1 arch:",model)
+model2 = build_model(size="default",ssmax=True)
+print(f"model 2 arch:",model2)
+model3 = build_model(size="large",ssmax=True)
+print(f"model 3 arch:",model3)

@@ -72,7 +72,7 @@ def generate_samples(model, tokenizer, device, num_samples=3, max_length=50, tem
 def train(args): 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.wandb:
-        wandb.login()  # Removed hardcoded API key for security
+        wandb.login()  
         wandb.init(project="mini-deepseek", config=vars(args))
 
     model = build_model(size=args.size, ssmax=args.ssmax, max_seq_len=args.max_seq_len)
