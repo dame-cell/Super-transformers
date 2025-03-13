@@ -39,7 +39,7 @@ We trained the MiniDeepseek architecture on a curated subset of the TinyStories 
 
 Train loss             |  Val loss
 :-------------------------:|:-------------------------:
-<img src="src/images/train_loss.png" alt="Image 1" width="400"/> | <img src="src/images/val_loss.png" alt="Image 1" width="400"/>
+<img src="src/images/train_loss.png" alt="Image 1" width="400"/> | <img src="src/images/val_loss.png" alt="Image 2" width="400"/>
 <p align="center">
   <em>Figure 1: Comparison of training and validation losses.</em>
 </p>
