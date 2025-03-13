@@ -48,7 +48,7 @@ def apply_decoupled_rotary_embed(x: torch.Tensor, freqs_complex: torch.Tensor, d
     # Reshape `x_rope` to prepare it for complex number operations.
     # We treat every **two consecutive** elements as a real and imaginary part of a complex number.
     # The `-1` automatically calculates the required size.
-    x_rope_reshape = x_rope.float().reshape(bs, seq_len, n_heads, -1, 2)  # Shape: (bs, seq_len, n_heads, d_rope/2, 2)
+    x_rope_reshape = x_rope.float().contiguous().reshape(bs, seq_len, n_heads, -1, 2)
 
     # Convert real-valued tensors to complex numbers, where:
     # - `[..., 0]` corresponds to the real part.
