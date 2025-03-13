@@ -44,9 +44,25 @@ Train loss             |  Val loss
   <em>Figure 1: Comparison of training and validation losses.</em>
 </p>
 
+### Inference Optimization Results
+
 <p align="center">
   <img src="src/images/mini_deepseek_optimization_analysis.png" alt="Model Comparison" width="800"/>
 </p>
+
+Our benchmarking demonstrates significant performance improvements through combining weight absorption and KV caching optimizations in the DeepSeek Mini model.
+
+Performance Highlights
+Total Generation Time: The fully optimized model achieves a 70% reduction (from ~1.0s to ~0.3s), with KV caching and weight absorption independently providing 45% and 60% improvements respectively.
+
+- Per-Token Speed: Processing time decreases from 10-11ms (baseline) to 7.5ms (fully optimized), representing a 30% speedup that enhances generation fluency.
+
+- First Token Latency: Most dramatically, initial response time drops by 90%—from 100-200ms to just 10ms—significantly improving perceived responsiveness.
+
+- Processing Stability: Optimized variants show markedly reduced variance in token generation times, with the fully optimized model maintaining consistent ~7ms processing regardless of sequence length.
+Impact
+
+These optimizations work synergistically, delivering a combined 3× speedup that transforms  MiniDeepseek into a highly responsive system suitable for latency-sensitive applications. The multiplicative effect of these techniques enables efficient deployment even on hardware with limited computational resources, making real-time text generation practical for a wider range of applications.
 
 
 ## Getting Started
