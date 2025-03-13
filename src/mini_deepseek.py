@@ -92,7 +92,6 @@ class SwiGLUMLP(nn.Module):
         x = self.w3(x)  # Project back to original dimension
         x = self.dropout(x)  # Apply dropout
         return x
-
 class MLA(nn.Module):
     def __init__(self, dim, num_heads, latent_dim, max_seq_len=2048, d_rope=None):
         super().__init__()
@@ -102,43 +101,53 @@ class MLA(nn.Module):
         self.head_dim = dim // num_heads 
         self.latent_dim = latent_dim 
 
-        self.d_rope  = d_rope  if d_rope is not None else self.head_dim // 4
-        assert self.d_rope % 2 == 0,"d_rope must be divisible by 2 for complex representation"
-        assert self.d_rope <= self.head_dim ,  "d_rope must be less than or equal to head_dim"
+        self.d_rope = d_rope if d_rope is not None else self.head_dim // 4
+        assert self.d_rope % 2 == 0, "d_rope must be divisible by 2 for complex representation"
+        assert self.d_rope <= self.head_dim, "d_rope must be less than or equal to head_dim"
         
-        # query projection 
-        self.wq = nn.Linear(dim,num_heads * self.head_dim,bias=False)
-        # latent key-value projections (for compression)
-        self.wk_a = nn.Linear(dim,latent_dim,bias=False) # x ->latent dim  
-        self.wk_b = nn.Linear(latent_dim,num_heads * self.head_dim,bias=False) # latent_dim - > expanded_space
+        # Query projection 
+        self.wq = nn.Linear(dim, num_heads * self.head_dim, bias=False)
         
-        self.wv_a = nn.Linear(dim,latent_dim,bias=False)  # x ->latent dim 
-        self.wv_b = nn.Linear(latent_dim,num_heads * self.head_dim,bias=False) # latent_dim - > expanded_space 
+        # Latent key-value projections (for compression)
+        self.wk_a = nn.Linear(dim, latent_dim, bias=False)  # x -> latent dim  
+        self.wk_b = nn.Linear(latent_dim, num_heads * self.head_dim, bias=False)  # latent_dim -> expanded_space
         
-        self.wo = nn.Linear(num_heads * self.head_dim,dim,bias=False)
-        # scale params for the ssmax 
+        self.wv_a = nn.Linear(dim, latent_dim, bias=False)  # x -> latent dim 
+        self.wv_b = nn.Linear(latent_dim, num_heads * self.head_dim, bias=False)  # latent_dim -> expanded_space 
+        
+        self.wo = nn.Linear(num_heads * self.head_dim, dim, bias=False)
+        
+        # Scale params for the scaled softmax 
         self.scale_param = nn.Parameter(torch.ones(num_heads))
         
-        # cache for k and v 
+        # Cache for k and v 
         self.cache_k = None 
         self.cache_v = None 
-        # flag to track if weights have been absorbed for inference 
+        
+        # Flag to track if weights have been absorbed for inference 
         self.weights_absorbed = False
+        
+        # For optimized inference path
+        self.wk = None
+        self.wv = None
     
-    def absorb_weights(self): 
+    def absorb_weights(self):
+        """
+        Absorb the two-step key and value projections into single matrices for inference.
+        This is an optimization that reduces computation during inference.
+        """
         if not self.weights_absorbed:
+            # Create new linear layers for the absorbed weights
             self.wk = nn.Linear(self.dim, self.num_heads * self.head_dim, bias=False)
             self.wv = nn.Linear(self.dim, self.num_heads * self.head_dim, bias=False)
             
+            # Compute the matrix multiplication of the two-step projections
             with torch.no_grad():
                 self.wk.weight.copy_(self.wk_b.weight @ self.wk_a.weight)
                 self.wv.weight.copy_(self.wv_b.weight @ self.wv_a.weight)
-
-            # Mark as absorbed before deleting the attributes
-            self.weights_absorbed = True
             
-            # Remove latent projections to save memory
-            del self.wk_a, self.wk_b, self.wv_a, self.wv_b
+            # Mark as absorbed
+            self.weights_absorbed = True
     
     def forward(self, x, mask=None, start_pos=0, freqs_complex=None, ssmax=False, use_cache=True):
         bs, seq_len, dim = x.size()
@@ -146,57 +155,56 @@ class MLA(nn.Module):
         # Initialize cache if needed
         if use_cache and (self.cache_k is None or self.cache_k.size(0) != bs):
             self.cache_k = torch.zeros(
-                (bs, self.latent_dim, self.max_seq_len),
+                (bs, self.num_heads * self.head_dim, self.max_seq_len),
                 device=x.device, dtype=x.dtype
             )
             self.cache_v = torch.zeros(
-                (bs, self.latent_dim, self.max_seq_len),
+                (bs, self.num_heads * self.head_dim, self.max_seq_len),
                 device=x.device, dtype=x.dtype
             )
         
+        # Current sequence length including previous context
         curr_len = start_pos + seq_len
+        
+        # Project queries
         q = self.wq(x).view(bs, seq_len, self.num_heads, self.head_dim)
         
-        # Handle different scenarios for key and value processing
-        if self.weights_absorbed and use_cache and start_pos > 0:
-            # Optimized inference path with absorbed weights
-            k_latent = self.wk(x).permute(0, 2, 1)
-            v_latent = self.wv(x).permute(0, 2, 1)
-            
-            # Update cache
-            self.cache_k[:bs, :, start_pos:start_pos+seq_len] = k_latent
-            self.cache_v[:bs, :, start_pos:start_pos+seq_len] = v_latent
-            
-            # Get full cached sequence
-            k_latent_full = self.cache_k[:bs, :, :curr_len]
-            v_latent_full = self.cache_v[:bs, :, :curr_len]
-            
-            # Reshape and project
-            k = k_latent_full.permute(0, 2, 1).view(bs, curr_len, self.num_heads, self.head_dim)
-            v = v_latent_full.permute(0, 2, 1).view(bs, curr_len, self.num_heads, self.head_dim)
+        # Handle key and value projections based on whether weights are absorbed
+        if self.weights_absorbed and self.wk is not None and self.wv is not None:
+            # Use the absorbed projection matrices for inference
+            k_curr = self.wk(x).view(bs, seq_len, self.num_heads, self.head_dim)
+            v_curr = self.wv(x).view(bs, seq_len, self.num_heads, self.head_dim)
         else:
-            # Regular training path
+            # Use the two-step projection for training
             k_latent = self.wk_a(x)
             v_latent = self.wv_a(x)
             
-            # Handle caching during training if needed
-            if use_cache and start_pos > 0:
-                k_latent_prev = self.cache_k[:bs, :, :start_pos].permute(0, 2, 1) if self.cache_k is not None else None
-                v_latent_prev = self.cache_v[:bs, :, :start_pos].permute(0, 2, 1) if self.cache_v is not None else None
-                
-                if k_latent_prev is not None:
-                    k_latent = torch.cat([k_latent_prev, k_latent], dim=1)
-                    v_latent = torch.cat([v_latent_prev, v_latent], dim=1)
-                    
-                # Update cache for current tokens
-                self.cache_k[:bs, :, start_pos:start_pos+seq_len] = k_latent.permute(0, 2, 1)[:, :, -seq_len:]
-                self.cache_v[:bs, :, start_pos:start_pos+seq_len] = v_latent.permute(0, 2, 1)[:, :, -seq_len:]
-                
-            # Project from latent to final space
-            k = self.wk_b(k_latent).view(bs, -1, self.num_heads, self.head_dim)
-            v = self.wv_b(v_latent).view(bs, -1, self.num_heads, self.head_dim)
+            k_curr = self.wk_b(k_latent).view(bs, seq_len, self.num_heads, self.head_dim)
+            v_curr = self.wv_b(v_latent).view(bs, seq_len, self.num_heads, self.head_dim)
         
-        # Prepare for attention computation
+        # Handle caching for autoregressive generation
+        if use_cache and start_pos > 0:
+            # Flatten the head dimension for caching
+            k_curr_flat = k_curr.reshape(bs, seq_len, -1)
+            v_curr_flat = v_curr.reshape(bs, seq_len, -1)
+            
+            # Update cache with current tokens
+            self.cache_k[:bs, :, start_pos:start_pos+seq_len] = k_curr_flat.permute(0, 2, 1)
+            self.cache_v[:bs, :, start_pos:start_pos+seq_len] = v_curr_flat.permute(0, 2, 1)
+            
+            # Retrieve the full cached sequence (including previous tokens)
+            k_flat = self.cache_k[:bs, :, :curr_len].permute(0, 2, 1)
+            v_flat = self.cache_v[:bs, :, :curr_len].permute(0, 2, 1)
+            
+            # Reshape to include head dimension
+            k = k_flat.view(bs, curr_len, self.num_heads, self.head_dim)
+            v = v_flat.view(bs, curr_len, self.num_heads, self.head_dim)
+        else:
+            # For the first token or when not using cache
+            k = k_curr
+            v = v_curr
+        
+        # Prepare tensors for attention computation
         q = q.permute(0, 2, 1, 3)  # [bs, num_heads, seq_len, head_dim]
         k = k.permute(0, 2, 1, 3)  # [bs, num_heads, curr_len, head_dim]
         v = v.permute(0, 2, 1, 3)  # [bs, num_heads, curr_len, head_dim]
@@ -215,8 +223,7 @@ class MLA(nn.Module):
         # Reshape output and project
         out = out.permute(0, 2, 1, 3).contiguous().view(bs, seq_len, self.num_heads * self.head_dim)
         return self.wo(out)
-
-
+        
 class EncoderLayer(nn.Module):
     def __init__(self, dim, num_heads, latent_dim, hidden_dim, dropout, max_seq_len=2048,d_rope=None,ssmax=False):
         super().__init__()
