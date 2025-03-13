@@ -109,11 +109,11 @@ class MLA(nn.Module):
         self.wq = nn.Linear(dim, num_heads * self.head_dim, bias=False)
         
         # Latent key-value projections (for compression)
-        self.wk_a = nn.Linear(dim, latent_dim, bias=False)  # x -> latent dim  
-        self.wk_b = nn.Linear(latent_dim, num_heads * self.head_dim, bias=False)  # latent_dim -> expanded_space
+        self.wk_a = nn.Linear(dim, latent_dim, bias=False)
+        self.wk_b = nn.Linear(latent_dim, num_heads * self.head_dim, bias=False)
         
-        self.wv_a = nn.Linear(dim, latent_dim, bias=False)  # x -> latent dim 
-        self.wv_b = nn.Linear(latent_dim, num_heads * self.head_dim, bias=False)  # latent_dim -> expanded_space 
+        self.wv_a = nn.Linear(dim, latent_dim, bias=False)
+        self.wv_b = nn.Linear(latent_dim, num_heads * self.head_dim, bias=False)
         
         self.wo = nn.Linear(num_heads * self.head_dim, dim, bias=False)
         
@@ -137,9 +137,11 @@ class MLA(nn.Module):
         This is an optimization that reduces computation during inference.
         """
         if not self.weights_absorbed:
-            # Create new linear layers for the absorbed weights
-            self.wk = nn.Linear(self.dim, self.num_heads * self.head_dim, bias=False)
-            self.wv = nn.Linear(self.dim, self.num_heads * self.head_dim, bias=False)
+            device = self.wk_a.weight.device  # Get the device from an existing parameter
+            
+            # Create new linear layers for the absorbed weights on the same device
+            self.wk = nn.Linear(self.dim, self.num_heads * self.head_dim, bias=False, device=device)
+            self.wv = nn.Linear(self.dim, self.num_heads * self.head_dim, bias=False, device=device)
             
             # Compute the matrix multiplication of the two-step projections
             with torch.no_grad():
@@ -151,16 +153,17 @@ class MLA(nn.Module):
     
     def forward(self, x, mask=None, start_pos=0, freqs_complex=None, ssmax=False, use_cache=True):
         bs, seq_len, dim = x.size()
+        device = x.device  # Get the device from the input tensor
         
         # Initialize cache if needed
         if use_cache and (self.cache_k is None or self.cache_k.size(0) != bs):
             self.cache_k = torch.zeros(
                 (bs, self.num_heads * self.head_dim, self.max_seq_len),
-                device=x.device, dtype=x.dtype
+                device=device, dtype=x.dtype
             )
             self.cache_v = torch.zeros(
                 (bs, self.num_heads * self.head_dim, self.max_seq_len),
-                device=x.device, dtype=x.dtype
+                device=device, dtype=x.dtype
             )
         
         # Current sequence length including previous context
@@ -211,9 +214,12 @@ class MLA(nn.Module):
         
         # Apply rotary embeddings if provided
         if freqs_complex is not None:
+            # Ensure freqs_complex is on the same device
+            if freqs_complex.device != device:
+                freqs_complex = freqs_complex.to(device)
             q = apply_decoupled_rotary_embed(q, freqs_complex, self.d_rope)
             k = apply_decoupled_rotary_embed(k, freqs_complex, self.d_rope)
-        
+
         # Compute attention with or without scaled softmax
         if ssmax:
             out, attention = scaled_dot_product(q, k, v, mask, self.scale_param)
