@@ -161,3 +161,16 @@ You can find the Pretrained Models here:
     url     = {https://arxiv.org/pdf/2411.07191v1}
 }
 ```
+
+```bash
+@techreport{DeepSeek2025V3,
+    title   = {DeepSeek-V3 Technical Report},
+    author  = {DeepSeek-AI},
+    year    = {2025},
+    month   = {Feb},
+    url     = {https://arxiv.org/pdf/2412.19437},
+    institution = {DeepSeek-AI},
+    note    = {https://arxiv.org/pdf/2412.19437}
+}
+
+```
