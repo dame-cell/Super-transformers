@@ -4,11 +4,20 @@
 
 
 ## Overview
-Super-transformers is an experimental implementation that explores modifications to the standard GPT-2 transformer architecture. This project combines three key architectural innovations:
+This repository explores experimental modifications to the standard transformer architecture through two distinct yet complementary projects: Super-Transformers and MiniDeepSeek
 
+### Super-transformers
 - Scalable Softmax: Implementation of a modified attention mechanism using scalable softmax to improve computational efficiency and potentially enhance model performance on longer sequences.
 
 - Positional Encoding Ablation: Exploring the model's capability to learn without explicit positional encodings, investigating whether contextual information alone is sufficient for sequence modeling.
+
+### MiniDeepSeek 
+
+- Multi-Latent Attention (MLA) represents a fundamental rethinking of attention computation. Rather than computing attention in a single high-dimensional space, MLA projects queries and keys into multiple lower-dimensional latent spaces. This approach allows the model to capture different aspects of information in parallel while substantially reducing computational demands. The beauty of MLA lies in its ability to maintain representational power while decreasing the FLOPs required for attention computation, often achieving up to 4x efficiency improvements depending on implementation details.
+
+- KV Cache Optimization addresses a core inefficiency in autoregressive text generation. During inference, standard transformer models repeatedly compute key and value tensors for the entire sequence with each new token. The KV cache optimization stores these previously computed tensors, enabling the model to reuse them rather than recalculating. This becomes increasingly valuable as sequence length grows, as only the newest token requires fresh computation while previous context is efficiently retrieved from cache. This optimization dramatically reduces the computational cost of generation after the first token, making real-time text generation feasible even on constrained hardware.
+
+- Weight Absorption Technique focuses on computational graph optimization. This technique fuses multiple sequential matrix multiplications into fewer operations by pre-computing their combined effect. For instance, in transformer architectures, multiple linear projections can be collapsed into unified transformation matrices during inference. This absorption not only reduces the total number of operations but also eliminates intermediate activations, reducing memory transfers that often bottleneck performance. When properly implemented, weight absorption can provide a 15-30% speedup with minimal code changes, particularly when leveraged alongside static computational graphs.
 
 
 
@@ -25,6 +34,20 @@ Our preliminary experiments compare training and validation loss between:
 <p align="center">
   <em>Figure 1: Comparison of training and validation losses between different architectural configurations.</em>
 </p>
+
+We trained the MiniDeepseek architecture on a curated subset of the TinyStories dataset from Huggingface. The training process consisted of a single epoch, requiring approximately 12 hours of computational time on our hardware configuration.
+
+Train loss             |  Val loss
+:-------------------------:|:-------------------------:
+<img src="src/images/train_loss.png" alt="Image 1" width="400"/> | <img src="src/images/val_loss.png" alt="Image 1" width="400"/>
+<p align="center">
+  <em>Figure 1: Comparison of training and validation losses.</em>
+</p>
+
+<p align="center">
+  <img src="src/images/mini_deepseek_optimization_analysis.png" alt="Model Comparison" width="800"/>
+</p>
+
 
 ## Getting Started
 ```bash
@@ -51,6 +74,7 @@ python3 data.py \
 ```
 ## Training 
 
+For training the GPT2 architecture: 
 ```bash 
 python3 train.py \
     --train_data path_to_train_data \
@@ -65,6 +89,23 @@ python3 train.py \
     --save_model 1000 \
     --epoch 1 \
 ```
+
+For training the MiniDeepseek architecture: 
+```bash 
+python3 train_deepseek.py \
+    --train_data path_to_train_data \
+    --test_data path_to_test_data \
+    --size small \
+    --ssmax  \
+    --wandb  \
+    --log_interval 1000 \ 
+    --validation_step 1000 \ 
+    --generate 5000 \ 
+    --batch_size 20 \  
+    --max_seq_len 512 \  
+```
+
+
 ## Models 
 
 > **Warning**  
@@ -73,8 +114,7 @@ python3 train.py \
 You can find the Pretrained Models here: 
 | **Model**             | **Link**                               |
 |---------------------------|-----------------------------------------|
-| Model(SSMax with no pos_enc)                      | [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model.pth) 
-| Model(no SSMax with pos_enc)                      |  [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model_2.pth) 
+| Deepseek Model                      | [Model](https://huggingface.co/damerajee/super-transformers-model/blob/main/best_model.pth) 
 
 
 ### Citations
