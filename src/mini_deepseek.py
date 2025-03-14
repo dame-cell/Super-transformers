@@ -92,6 +92,11 @@ class SwiGLUMLP(nn.Module):
         x = self.w3(x)  # Project back to original dimension
         x = self.dropout(x)  # Apply dropout
         return x
+
+class MOE(nn.Module):
+    def __init__(self,dim:int,hidden_dim:int,dropout:float):
+        pass 
+        
 class MLA(nn.Module):
     def __init__(self, dim, num_heads, latent_dim, max_seq_len=2048, d_rope=None):
         super().__init__()
