@@ -19,7 +19,7 @@ This repository explores experimental modifications to the standard transformer 
 
 - Weight Absorption Technique focuses on computational graph optimization. This technique fuses multiple sequential matrix multiplications into fewer operations by pre-computing their combined effect. For instance, in transformer architectures, multiple linear projections can be collapsed into unified transformation matrices during inference. This absorption not only reduces the total number of operations but also eliminates intermediate activations, reducing memory transfers that often bottleneck performance. When properly implemented, weight absorption can provide a 15-30% speedup with minimal code changes, particularly when leveraged alongside static computational graphs.
 
-
+- No Mixture of experts because moe is usually very helpful for large scale models, and I'm only using this experiments for smaller models 
 
 ## Experimental Results
 Our preliminary experiments compare training and validation loss between:
